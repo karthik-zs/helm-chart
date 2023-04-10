@@ -1,0 +1,129 @@
+{{- if not .Values.schedule -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    app: {{ .Values.name }}
+spec:
+  replicas: {{ .Values.minReplicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+    spec:
+      imagePullSecrets:
+      - name: gcr-json-key
+      {{- if or  (.Values.secrets) (ne .Values.DB_DIALECT "") }}
+      serviceAccountName: secrets-account
+      volumes:
+        - name: app-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "gcp-secrets-application"
+      {{- end }}
+      {{- if .Values.initContainer }}
+      initContainers:
+        - name: {{ .Values.name }}-init
+          image: {{ .Values.initContainer.image }}
+          {{- if .Values.initContainer.args }}
+          args: {{ .Values.initContainer.args }}
+          {{- end }}
+          env:
+            {{- range $k,$v := .Values.initContainer.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range $k,$v := .Values.initContainer.secrets }}
+            - name: {{ $k | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: "application-secrets"
+                  key:  {{ $v | quote }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ .Values.name }}
+          image: {{ .Values.image }}
+          ports:
+            - name: http-port
+              containerPort: {{ .Values.httpPort }}
+            - name: metrics-port
+              containerPort: {{ .Values.metricsPort }}
+          env:
+            {{- range $k,$v := .Values.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range $k,$v := .Values.secrets }}
+            - name: {{ $k | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: "application-secrets"
+                  key:  {{ $v | quote }}
+            {{- end }}
+            {{- if ne .Values.DB_DIALECT "" }}
+            - name: DB_HOST
+              value: "{{ $.Release.Namespace }}-sql.db"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: "{{ $.Values.DB_USER }}"
+            - name: DB_DIALECT
+              value: {{ .Values.DB_DIALECT }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "application-secrets"
+                  key: "{{ $.Values.cluster_name }}-{{ $.Release.Namespace }}-{{ $.Values.DB_NAME }}-db-secret"
+            {{- end }}
+          {{- if or  (.Values.secrets) (ne .Values.DB_DIALECT "") }}
+          # Volume mount is required for the GCP secret to sync with kubernetes secret
+          volumeMounts:
+            - name: app-secrets
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          {{- end }}
+          resources:
+            requests:
+              memory: {{.Values.minMemory | quote }}
+              cpu: {{.Values.minCPU | quote }}
+            limits:
+              memory: {{.Values.maxMemory| quote }}
+              cpu: {{.Values.maxCPU | quote }}
+          readinessProbe:
+            {{- if .Values.cliService }}
+            exec:
+              command:
+                - ls
+            {{ else }}
+            httpGet:
+              path: {{ .Values.heartbeatURL | quote}}
+              port: {{ .Values.httpPort }}
+            {{- end }}
+            initialDelaySeconds: 3
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            {{- if .Values.cliService }}
+            exec:
+              command:
+                - ls
+            {{ else }}
+            httpGet:
+              path: {{ .Values.heartbeatURL | quote }}
+              port: {{ .Values.httpPort }}
+            {{- end }}
+            initialDelaySeconds: 3
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+---
+  {{- end -}}

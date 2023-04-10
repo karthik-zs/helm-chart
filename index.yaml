@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  service:
+  - apiVersion: v1
+    appVersion: "1.0"
+    created: "2023-04-10T11:57:17.821842111+05:30"
+    description: Helm chart creates a deployment, service, hpa for a service along
+      with serviceMonitor etc
+    digest: ca7a6682bfe1ca45c84a0debccd46cb1718b060c91abf05f2ba50b3cf99158dd
+    name: service
+    urls:
+    - https://github.io/karthik-zs/helm-chart/service-0.0.1.tgz
+    version: 0.0.1
+generated: "2023-04-10T11:57:17.820629954+05:30"
